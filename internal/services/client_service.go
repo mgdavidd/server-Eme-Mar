@@ -15,28 +15,47 @@ func NewClientService(db *sql.DB) *ClientService {
 }
 
 func (s *ClientService) GetAll() ([]models.Client, error) {
-	rows, err := s.DB.Query("SELECT id, nombre, telefono, deuda FROM clientes")
+	rows, err := s.DB.Query(`
+        SELECT id, nombre, telefono, deuda 
+        FROM clientes
+    `)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	clients := []models.Client{}
+	list := []models.Client{}
 	for rows.Next() {
 		var c models.Client
 		rows.Scan(&c.ID, &c.Name, &c.Phone, &c.Debt)
-		clients = append(clients, c)
+		list = append(list, c)
 	}
 
-	return clients, nil
+	return list, nil
+}
+
+func (s *ClientService) GetById(id int) (models.Client, error) {
+	var c models.Client
+
+	err := s.DB.QueryRow(`
+        SELECT id, nombre, telefono, deuda 
+        FROM clientes WHERE id = ?
+    `, id).Scan(&c.ID, &c.Name, &c.Phone, &c.Debt)
+
+	if err == sql.ErrNoRows {
+		return models.Client{}, ErrNotFound
+	}
+	if err != nil {
+		return models.Client{}, err
+	}
+	return c, nil
 }
 
 func (s *ClientService) Create(c *models.Client) error {
-
 	stmt, err := s.DB.Prepare(`
-		INSERT INTO clientes (nombre, telefono, deuda)
-		VALUES (?, ?, ?)
-	`)
+        INSERT INTO clientes (nombre, telefono, deuda)
+        VALUES (?, ?, ?)
+    `)
 	if err != nil {
 		return err
 	}
@@ -48,5 +67,38 @@ func (s *ClientService) Create(c *models.Client) error {
 
 	id, _ := res.LastInsertId()
 	c.ID = id
+	return nil
+}
+
+func (s *ClientService) UpdateClient(c *models.Client) error {
+	res, err := s.DB.Exec(`
+        UPDATE clientes
+        SET nombre = ?, telefono = ?, deuda = ?
+        WHERE id = ?
+    `, c.Name, c.Phone, c.Debt, c.ID)
+
+	if err != nil {
+		return err
+	}
+
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
+func (s *ClientService) DeleteClient(id int) error {
+	res, err := s.DB.Exec(`DELETE FROM clientes WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return ErrNotFound
+	}
+
 	return nil
 }
