@@ -39,6 +39,7 @@ func RunMigrations(db *sql.DB) {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			nombre TEXT NOT NULL,
 			costo_total REAL NOT NULL,
+			precio REAL NOT NULL,
 			foto BLOB NULL
 		);`,
 
@@ -48,11 +49,18 @@ func RunMigrations(db *sql.DB) {
 			producto_id INTEGER NOT NULL,
 			insumo_id INTEGER NOT NULL,
 			cantidad_insumo REAL NOT NULL,
-			unidad_medida TEXT NOT NULL,
 
 			FOREIGN KEY (producto_id) REFERENCES productos(id) ON DELETE CASCADE,
 			FOREIGN KEY (insumo_id) REFERENCES insumos(id) ON DELETE CASCADE
 		);`,
+
+		`CREATE TABLE IF NOT EXISTS caja (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			saldo REAL NOT NULL
+		);`,
+
+		// `INSERT INTO caja (id, saldo)
+		// VALUES (1, 0);`,
 
 		// ÍNDICES para mejorar rendimiento de JOIN
 		`CREATE INDEX IF NOT EXISTS idx_prod_ins_producto ON producto_insumos(producto_id);`,

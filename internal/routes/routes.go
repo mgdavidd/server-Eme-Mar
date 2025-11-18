@@ -9,6 +9,8 @@ func RegisterRoutes(
 	r *mux.Router,
 	clientHandler *handlers.ClientHandler,
 	insumoHandler *handlers.InsumoHandler,
+	movesHandler *handlers.MoveHandler,
+	productHandler *handlers.ProductHandler,
 ) {
 
 	// --- CLIENTES ---
@@ -25,5 +27,14 @@ func RegisterRoutes(
 	insumoRoutes.HandleFunc("", insumoHandler.CreateInsumo).Methods("POST")
 	insumoRoutes.HandleFunc("/{id}", insumoHandler.GetByIdInsumos).Methods("GET")
 	insumoRoutes.HandleFunc("/{id}", insumoHandler.UpdateInsumo).Methods("PUT")
+
+	// --- PRODUCTOS ---
+	prductRoutes := r.PathPrefix("/products").Subrouter()
+	prductRoutes.HandleFunc("", productHandler.CreateProduct).Methods("POST")
+	prductRoutes.HandleFunc("", productHandler.GetAllProducts).Methods("GET")
+
+	// --- MOVIMIENTOS ---
+	movesRoutes := r.PathPrefix("/moves").Subrouter()
+	movesRoutes.HandleFunc("", movesHandler.Supply).Methods("POST")
 
 }

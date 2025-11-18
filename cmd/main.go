@@ -24,14 +24,17 @@ func main() {
 	// Services
 	clientService := services.NewClientService(database)
 	insumoService := services.NewInsumoService(database)
+	moveService := services.NewMoveService(database)
+	productService := services.NewProductService(database)
 
 	// Handlers
 	clientHandler := handlers.NewClientHandler(clientService)
 	insumoHandler := handlers.NewInsumoHandler(insumoService)
-
+	moveHandler := handlers.NewMoveHandler(moveService)
+	productHandler := handlers.NewProductHandler(productService)
 	// Router
 	r := mux.NewRouter()
-	routes.RegisterRoutes(r, clientHandler, insumoHandler)
+	routes.RegisterRoutes(r, clientHandler, insumoHandler, moveHandler, productHandler)
 
 	// CORS
 	handler := cors.Default().Handler(r)

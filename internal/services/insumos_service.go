@@ -2,6 +2,7 @@ package services
 
 import (
 	"database/sql"
+	"errors"
 
 	"github.com/mgdavidd/server-Eme-Mar/internal/models"
 )
@@ -42,7 +43,7 @@ func (s *InsumoService) GetById(id int) (models.Insumo, error) {
         FROM insumos WHERE id = ?
     `, id).Scan(&i.ID, &i.Name, &i.Um, &i.Stock, &i.MinStock, &i.UnitPrice)
 
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return models.Insumo{}, ErrNotFound
 	}
 	if err != nil {
