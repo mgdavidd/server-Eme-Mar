@@ -65,6 +65,49 @@ func RunMigrations(db *sql.DB) {
 		// ÍNDICES para mejorar rendimiento de JOIN
 		`CREATE INDEX IF NOT EXISTS idx_prod_ins_producto ON producto_insumos(producto_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_prod_ins_insumo ON producto_insumos(insumo_id);`,
+
+		// TRIGGERS: recalcular costo_total en productos cuando cambian las relaciones o precios
+		`CREATE TRIGGER IF NOT EXISTS recalc_after_insert_prod_ins
+		AFTER INSERT ON producto_insumos
+		BEGIN
+			UPDATE productos SET costo_total = (
+				SELECT COALESCE(SUM(i.precio_unitario * pi.cantidad_insumo), 0)
+				FROM producto_insumos pi JOIN insumos i ON pi.insumo_id = i.id
+				WHERE pi.producto_id = NEW.producto_id
+			) WHERE id = NEW.producto_id;
+		END;`,
+
+		`CREATE TRIGGER IF NOT EXISTS recalc_after_update_prod_ins
+		AFTER UPDATE ON producto_insumos
+		BEGIN
+			UPDATE productos SET costo_total = (
+				SELECT COALESCE(SUM(i.precio_unitario * pi.cantidad_insumo), 0)
+				FROM producto_insumos pi JOIN insumos i ON pi.insumo_id = i.id
+				WHERE pi.producto_id = NEW.producto_id
+			) WHERE id = NEW.producto_id;
+		END;`,
+
+		`CREATE TRIGGER IF NOT EXISTS recalc_after_delete_prod_ins
+		AFTER DELETE ON producto_insumos
+		BEGIN
+			UPDATE productos SET costo_total = (
+				SELECT COALESCE(SUM(i.precio_unitario * pi.cantidad_insumo), 0)
+				FROM producto_insumos pi JOIN insumos i ON pi.insumo_id = i.id
+				WHERE pi.producto_id = OLD.producto_id
+			) WHERE id = OLD.producto_id;
+		END;`,
+
+		`CREATE TRIGGER IF NOT EXISTS recalc_after_update_insumo_precio
+		AFTER UPDATE OF precio_unitario ON insumos
+		BEGIN
+			UPDATE productos SET costo_total = (
+				SELECT COALESCE(SUM(i.precio_unitario * pi.cantidad_insumo), 0)
+				FROM producto_insumos pi JOIN insumos i ON pi.insumo_id = i.id
+				WHERE pi.producto_id = productos.id
+			) WHERE id IN (SELECT producto_id FROM producto_insumos WHERE insumo_id = NEW.id);
+		END;`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_producto_insumo_unique
+		ON producto_insumos(producto_id, insumo_id);`,
 	}
 
 	for _, q := range queries {

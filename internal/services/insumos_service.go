@@ -86,6 +86,19 @@ func (s *InsumoService) Update(i *models.Insumo) error {
 	if rows == 0 {
 		return ErrNotFound
 	}
+	return nil
+}
+
+func (s *InsumoService) Delete(id int) error {
+	res, err := s.DB.Exec(`DELETE FROM insumos WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return ErrNotFound
+	}
 
 	return nil
 }

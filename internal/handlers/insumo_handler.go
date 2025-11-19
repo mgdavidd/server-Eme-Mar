@@ -112,7 +112,27 @@ func (h *InsumoHandler) UpdateInsumo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	utils.RespondJSON(w, 200, in)
+}
 
+func (h *InsumoHandler) DeleteInsumo(w http.ResponseWriter, r *http.Request) {
+	idStr := mux.Vars(r)["id"]
+	id, err := strconv.Atoi(idStr)
+	if err != nil || id <= 0 {
+		utils.RespondError(w, 400, "id inválido")
+		return
+	}
+
+	err = h.Service.Delete(id)
+	if errors.Is(err, services.ErrNotFound) {
+		utils.RespondError(w, 404, "insumo no encontrado")
+		return
+	}
+	if err != nil {
+		utils.RespondError(w, 500, "error eliminando insumo")
+		return
+	}
+
+	w.WriteHeader(204)
 }
 
 // VALIDACIÓN

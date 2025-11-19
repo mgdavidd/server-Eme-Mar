@@ -27,11 +27,18 @@ func RegisterRoutes(
 	insumoRoutes.HandleFunc("", insumoHandler.CreateInsumo).Methods("POST")
 	insumoRoutes.HandleFunc("/{id}", insumoHandler.GetByIdInsumos).Methods("GET")
 	insumoRoutes.HandleFunc("/{id}", insumoHandler.UpdateInsumo).Methods("PUT")
+	insumoRoutes.HandleFunc("/{id}", insumoHandler.DeleteInsumo).Methods("DELETE")
 
 	// --- PRODUCTOS ---
-	prductRoutes := r.PathPrefix("/products").Subrouter()
-	prductRoutes.HandleFunc("", productHandler.CreateProduct).Methods("POST")
-	prductRoutes.HandleFunc("", productHandler.GetAllProducts).Methods("GET")
+	productRoutes := r.PathPrefix("/products").Subrouter()
+	productRoutes.HandleFunc("", productHandler.CreateProduct).Methods("POST")
+	productRoutes.HandleFunc("", productHandler.GetAllProducts).Methods("GET")
+	productRoutes.HandleFunc("/{id}", productHandler.GetByIdProducts).Methods("GET")
+	productRoutes.HandleFunc("/{id}", productHandler.UpdateProduct).Methods("PUT")
+	productRoutes.HandleFunc("/{id}", productHandler.DeleteProduct).Methods("DELETE")
+	productRoutes.HandleFunc("/{id}/insumos/{insumo_id}", productHandler.AddProductInsumo).Methods("POST")
+	productRoutes.HandleFunc("/{id}/insumos/{insumo_id}", productHandler.UpdateProductInsumo).Methods("PUT")
+	productRoutes.HandleFunc("/{id}/insumos/{insumo_id}", productHandler.DeleteProductInsumo).Methods("DELETE")
 
 	// --- MOVIMIENTOS ---
 	movesRoutes := r.PathPrefix("/moves").Subrouter()
