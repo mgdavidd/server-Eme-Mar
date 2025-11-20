@@ -43,7 +43,7 @@ func RunMigrations(db *sql.DB) {
 			foto BLOB NULL
 		);`,
 
-		// PRODUCTO - INSUMOS (relación muchos-a-muchos)
+		// PRODUCTO - INSUMOS
 		`CREATE TABLE IF NOT EXISTS producto_insumos (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			producto_id INTEGER NOT NULL,
@@ -54,19 +54,55 @@ func RunMigrations(db *sql.DB) {
 			FOREIGN KEY (insumo_id) REFERENCES insumos(id) ON DELETE CASCADE
 		);`,
 
+		// CAJA
 		`CREATE TABLE IF NOT EXISTS caja (
 			id INTEGER PRIMARY KEY CHECK (id = 1),
 			saldo REAL NOT NULL
 		);`,
 
-		// `INSERT INTO caja (id, saldo)
-		// VALUES (1, 0);`,
+		/* ───────────────────────────────────────────── */
+		/*        NUEVAS TABLAS DE VENTAS A CRÉDITO       */
+		/* ───────────────────────────────────────────── */
 
-		// ÍNDICES para mejorar rendimiento de JOIN
+		// CREDIT SALES (ventas fiadas)
+		`CREATE TABLE IF NOT EXISTS credit_sales (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			client_id INTEGER NOT NULL,
+			total REAL NOT NULL,
+			remaining_balance REAL NOT NULL,
+			date TEXT NOT NULL,
+
+			FOREIGN KEY (client_id) REFERENCES clientes(id)
+		);`,
+
+		// ITEMS DE LAS VENTAS FIADAS
+		`CREATE TABLE IF NOT EXISTS credit_sale_items (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			credit_sale_id INTEGER NOT NULL,
+			product_id INTEGER NOT NULL,
+			quantity REAL NOT NULL,
+
+			FOREIGN KEY (credit_sale_id) REFERENCES credit_sales(id) ON DELETE CASCADE,
+			FOREIGN KEY (product_id) REFERENCES productos(id)
+		);`,
+
+		// ABONOS A VENTAS FIADAS
+		`CREATE TABLE IF NOT EXISTS credit_payments (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			credit_sale_id INTEGER NOT NULL,
+			amount REAL NOT NULL,
+			date TEXT NOT NULL,
+
+			FOREIGN KEY (credit_sale_id) REFERENCES credit_sales(id) ON DELETE CASCADE
+		);`,
+
 		`CREATE INDEX IF NOT EXISTS idx_prod_ins_producto ON producto_insumos(producto_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_prod_ins_insumo ON producto_insumos(insumo_id);`,
 
-		// TRIGGERS: recalcular costo_total en productos cuando cambian las relaciones o precios
+		`CREATE INDEX IF NOT EXISTS idx_credit_sales_client ON credit_sales(client_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_credit_sale_items_sale ON credit_sale_items(credit_sale_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_credit_payments_sale ON credit_payments(credit_sale_id);`,
+
 		`CREATE TRIGGER IF NOT EXISTS recalc_after_insert_prod_ins
 		AFTER INSERT ON producto_insumos
 		BEGIN
@@ -106,6 +142,7 @@ func RunMigrations(db *sql.DB) {
 				WHERE pi.producto_id = productos.id
 			) WHERE id IN (SELECT producto_id FROM producto_insumos WHERE insumo_id = NEW.id);
 		END;`,
+
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_producto_insumo_unique
 		ON producto_insumos(producto_id, insumo_id);`,
 	}

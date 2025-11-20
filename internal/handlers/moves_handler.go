@@ -19,6 +19,26 @@ func NewMoveHandler(s *services.MovementService) *MoveHandler {
 	return &MoveHandler{Service: s}
 }
 
+func (h *MoveHandler) GetAllMoves(w http.ResponseWriter, r *http.Request) {
+	data, err := h.Service.GetAll()
+	if err != nil {
+		utils.RespondError(w, 500, "error obteniendo movimientos")
+		return
+	}
+
+	utils.RespondJSON(w, 200, data)
+}
+
+func (h *MoveHandler) GetAccount(w http.ResponseWriter, r *http.Request) {
+	data, err := h.Service.GetBalance()
+	if err != nil {
+		utils.RespondError(w, 500, "error obteniendo Saldo/Fiado")
+		return
+	}
+
+	utils.RespondJSON(w, 200, data)
+}
+
 func (h *MoveHandler) Supply(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
