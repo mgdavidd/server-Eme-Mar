@@ -43,6 +43,8 @@ func RegisterRoutes(
 	// --- MOVIMIENTOS ---
 	movesRoutes := r.PathPrefix("/moves").Subrouter()
 	movesRoutes.HandleFunc("", movesHandler.Supply).Methods("POST")
+	movesRoutes.HandleFunc("/sell", movesHandler.Sell).Methods("POST")
+	movesRoutes.HandleFunc("/pay/credit", movesHandler.PayCredit).Methods("POST")
 	movesRoutes.HandleFunc("", movesHandler.GetAllMoves).Methods("GET")
 	movesRoutes.HandleFunc("/account", movesHandler.GetAccount).Methods("GET")
 

@@ -23,7 +23,6 @@ func (s *MovementService) GetAll() ([]models.Move, error) {
         SELECT id, descripcion, tipo, monto, fecha 
         FROM movimientos
     `)
-
 	if err != nil {
 		return nil, err
 	}
@@ -32,7 +31,9 @@ func (s *MovementService) GetAll() ([]models.Move, error) {
 	moves := []models.Move{}
 	for rows.Next() {
 		var i models.Move
-		rows.Scan(&i.ID, &i.Description, &i.Type, &i.Amount, &i.Date)
+		if err := rows.Scan(&i.ID, &i.Description, &i.Type, &i.Amount, &i.Date); err != nil {
+			return nil, err
+		}
 		moves = append(moves, i)
 	}
 
@@ -42,9 +43,9 @@ func (s *MovementService) GetAll() ([]models.Move, error) {
 func (s *MovementService) GetBalance() (models.Account, error) {
 	var b models.Account
 	err := s.DB.QueryRow(`
-    SELECT
-        (SELECT saldo FROM caja WHERE id = 1) AS balance,
-        (SELECT COALESCE(SUM(deuda), 0) FROM clientes) AS total_receivable
+        SELECT
+            (SELECT saldo FROM caja WHERE id = 1),
+            (SELECT COALESCE(SUM(deuda), 0) FROM clientes)
     `).Scan(&b.Balance, &b.AmountOwed)
 	if err != nil {
 		return models.Account{}, err
@@ -52,25 +53,56 @@ func (s *MovementService) GetBalance() (models.Account, error) {
 	return b, nil
 }
 
-func (s *MovementService) Supply(supply models.Supply) error {
+func buildSaleDescription(items []models.SaleItem, tx *sql.Tx) (string, error) {
+	var sb strings.Builder
 
+	for _, item := range items {
+		var name string
+		err := tx.QueryRow(`
+			SELECT nombre 
+			FROM productos 
+			WHERE id = ?
+		`, item.ProductID).Scan(&name)
+
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", ErrNotFound
+		}
+		if err != nil {
+			return "", err
+		}
+
+		sb.WriteString("- ")
+		sb.WriteString(name)
+		sb.WriteString(" x ")
+		sb.WriteString(strconv.FormatInt(item.Quantity, 10))
+		sb.WriteString("\n")
+	}
+
+	return sb.String(), nil
+}
+
+func (s *MovementService) Supply(supply models.Supply) (err error) {
 	if supply.Amount <= 0 {
 		return ErrInvalidInput
 	}
 
 	supply.Date = time.Now().Format("2006-01-02 15:04")
 
-	// Transacción
 	tx, err := s.DB.Begin()
 	if err != nil {
 		return err
 	}
 
 	defer func() {
-		if err != nil {
-			tx.Rollback()
+		if p := recover(); p != nil {
+			_ = tx.Rollback()
+			panic(p)
+		} else if err != nil {
+			_ = tx.Rollback()
 		} else {
-			tx.Commit()
+			if cerr := tx.Commit(); cerr != nil {
+				err = cerr
+			}
 		}
 	}()
 
@@ -104,7 +136,10 @@ func (s *MovementService) Supply(supply models.Supply) error {
 
 	supply.TotalAmount = unitPrice * supply.Amount
 
-	description := "Surtido de insumo: " + strings.ToUpper(nameInsumo) + " X " + strconv.FormatFloat(supply.Amount, 'f', -1, 64)
+	description := "Surtido de insumo: " +
+		strings.ToUpper(nameInsumo) +
+		" X " +
+		strconv.FormatFloat(supply.Amount, 'f', -1, 64)
 
 	_, err = tx.Exec(`
         INSERT INTO movimientos (descripcion, tipo, monto, fecha)
@@ -126,4 +161,181 @@ func (s *MovementService) Supply(supply models.Supply) error {
 	return nil
 }
 
-//func (s *MovementService) Sell()
+func (s *MovementService) Sell(sale models.Sale) (err error) {
+	sale.Date = time.Now().Format("2006-01-02 15:04")
+
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		if p := recover(); p != nil {
+			_ = tx.Rollback()
+			panic(p)
+		} else if err != nil {
+			_ = tx.Rollback()
+		} else {
+			if cerr := tx.Commit(); cerr != nil {
+				err = cerr
+			}
+		}
+	}()
+
+	// Validar cliente
+	var tmpID int
+	err = tx.QueryRow(`
+		SELECT id FROM clientes WHERE id = ?
+	`, sale.ClientId).Scan(&tmpID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+
+	// Calcular total
+	sale.Total = 0
+	for _, item := range sale.Items {
+		var price float64
+		err = tx.QueryRow(`
+			SELECT precio FROM productos WHERE id = ?
+		`, item.ProductID).Scan(&price)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		sale.Total += price * float64(item.Quantity)
+	}
+
+	// Venta a crédito
+	if sale.IsCredit {
+		res, err := tx.Exec(`
+			INSERT INTO credit_sales (client_id, total, remaining_balance, date)
+			VALUES (?, ?, ?, ?)
+		`, sale.ClientId, sale.Total, sale.Total, sale.Date)
+		if err != nil {
+			return err
+		}
+
+		creditID, _ := res.LastInsertId()
+
+		for _, item := range sale.Items {
+			_, err = tx.Exec(`
+				INSERT INTO credit_sale_items (credit_sale_id, product_id, quantity)
+				VALUES (?, ?, ?)
+			`, creditID, item.ProductID, item.Quantity)
+			if err != nil {
+				return err
+			}
+		}
+
+		_, err = tx.Exec(`
+		UPDATE clientes
+		SET deuda = deuda + ?
+		WHERE id = ?`, sale.Total, sale.ClientId)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	}
+
+	// Venta normal (contado)
+	description, err := buildSaleDescription(sale.Items, tx)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(`
+		INSERT INTO movimientos (descripcion, tipo, monto, fecha)
+		VALUES (?, 'ingreso', ?, ?)
+	`, description, sale.Total, sale.Date)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(`
+		UPDATE caja
+		SET saldo = saldo + ?
+		WHERE id = 1
+	`, sale.Total)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *MovementService) PayCredit(creditSaleID int64, amount float64) (err error) {
+	if amount <= 0 {
+		return ErrInvalidInput
+	}
+
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		if p := recover(); p != nil {
+			_ = tx.Rollback()
+			panic(p)
+		} else if err != nil {
+			_ = tx.Rollback()
+		} else {
+			if cerr := tx.Commit(); cerr != nil {
+				err = cerr
+			}
+		}
+	}()
+
+	var rem float64
+	var clientID int64
+	err = tx.QueryRow(`SELECT remaining_balance, client_id FROM credit_sales WHERE id = ?`, creditSaleID).Scan(&rem, &clientID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+
+	if amount > rem {
+		return ErrInvalidInput
+	}
+
+	// Atomic update para evitar condiciones de carrera
+	res, err := tx.Exec(`UPDATE credit_sales SET remaining_balance = remaining_balance - ? WHERE id = ? AND remaining_balance >= ?`, amount, creditSaleID, amount)
+	if err != nil {
+		return err
+	}
+	ra, _ := res.RowsAffected()
+	if ra == 0 {
+		return ErrInvalidInput
+	}
+
+	// Actualizar deuda del cliente de forma segura
+	res, err = tx.Exec(`UPDATE clientes SET deuda = deuda - ? WHERE id = ? AND deuda >= ?`, amount, clientID, amount)
+	if err != nil {
+		return err
+	}
+	ra, _ = res.RowsAffected()
+	if ra == 0 {
+		return ErrInvalidInput
+	}
+
+	_, err = tx.Exec(`INSERT INTO movimientos (descripcion, tipo, monto, fecha) VALUES (?, 'ingreso', ?, ?)`,
+		"Abono a crédito", amount, time.Now().Format("2006-01-02 15:04"))
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(`UPDATE caja SET saldo = saldo + ? WHERE id = 1`, amount)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
