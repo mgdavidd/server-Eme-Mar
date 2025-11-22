@@ -17,6 +17,7 @@ func RegisterRoutes(
 	clientRoutes := r.PathPrefix("/clients").Subrouter()
 	clientRoutes.HandleFunc("", clientHandler.GetClients).Methods("GET")
 	clientRoutes.HandleFunc("", clientHandler.CreateClient).Methods("POST")
+	clientRoutes.HandleFunc("/debt", clientHandler.GetIndebtedClient).Methods("GET")
 	clientRoutes.HandleFunc("/{id}", clientHandler.UpdateClient).Methods("PUT")
 	clientRoutes.HandleFunc("/{id}", clientHandler.DeleteClient).Methods("DELETE")
 	clientRoutes.HandleFunc("/{id}", clientHandler.GetClientById).Methods("GET")

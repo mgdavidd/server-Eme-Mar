@@ -116,3 +116,13 @@ func (h *ClientHandler) DeleteClient(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(204)
 }
+
+func (h *ClientHandler) GetIndebtedClient(w http.ResponseWriter, r *http.Request) {
+	list, err := h.Service.GetIndebtedClient()
+	if err != nil {
+		utils.RespondError(w, 500, "error obteniendo clientes deudores")
+		return
+	}
+
+	utils.RespondJSON(w, 200, list)
+}

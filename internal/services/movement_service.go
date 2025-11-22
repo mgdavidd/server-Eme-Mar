@@ -210,6 +210,52 @@ func (s *MovementService) Sell(sale models.Sale) (err error) {
 		sale.Total += price * float64(item.Quantity)
 	}
 
+	// DEDUCIR INSUMOS: por cada producto -> obtener sus insumos y restar (cantidad_por_producto * cantidad_vendida)
+	for _, item := range sale.Items {
+		rows, err := tx.Query(`
+            SELECT insumo_id, cantidad_insumo
+            FROM producto_insumos
+            WHERE producto_id = ?
+        `, item.ProductID)
+		if err != nil {
+			return err
+		}
+
+		for rows.Next() {
+			var insumoID int64
+			var qtyPerProduct float64
+			if err := rows.Scan(&insumoID, &qtyPerProduct); err != nil {
+				rows.Close()
+				return err
+			}
+
+			totalNeeded := qtyPerProduct * float64(item.Quantity)
+
+			// Intentar actualización atómica para evitar quedar con stock negativo
+			res, err := tx.Exec(`
+                UPDATE insumos
+                SET stock_actual = stock_actual - ?
+                WHERE id = ? AND stock_actual >= ?
+            `, totalNeeded, insumoID, totalNeeded)
+			if err != nil {
+				rows.Close()
+				return err
+			}
+			ra, _ := res.RowsAffected()
+			if ra == 0 {
+				rows.Close()
+				// insuficiente stock o insumo inexistente
+				return ErrInvalidInput
+			}
+		}
+
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return err
+		}
+		rows.Close()
+	}
+
 	// Venta a crédito
 	if sale.IsCredit {
 		res, err := tx.Exec(`
@@ -233,9 +279,9 @@ func (s *MovementService) Sell(sale models.Sale) (err error) {
 		}
 
 		_, err = tx.Exec(`
-		UPDATE clientes
-		SET deuda = deuda + ?
-		WHERE id = ?`, sale.Total, sale.ClientId)
+        UPDATE clientes
+        SET deuda = deuda + ?
+        WHERE id = ?`, sale.Total, sale.ClientId)
 		if err != nil {
 			return err
 		}
@@ -339,3 +385,102 @@ func (s *MovementService) PayCredit(creditSaleID int64, amount float64) (err err
 
 	return nil
 }
+
+//GET utiles para front
+// obtain credit sales from customers
+
+func (s *MovementService) GetCreditSalesClients(client_id int) ([]models.CreditSale, error) {
+
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() {
+		if p := recover(); p != nil {
+			_ = tx.Rollback()
+			panic(p)
+		} else if err != nil {
+			_ = tx.Rollback()
+		} else {
+			if cerr := tx.Commit(); cerr != nil {
+				err = cerr
+			}
+		}
+	}()
+
+	var tmpID int
+	err = tx.QueryRow(`
+		SELECT id FROM clientes WHERE id = ?
+	`, client_id).Scan(&tmpID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	rows, err := tx.Query(`
+		SELECT cs.id, cs.total, cs.remaining_balance, cs.date, csi.product_id, csi.quantity
+		FROM credit_sales cs 
+		JOIN credit_sale_items csi ON csi.credit_sale_id = cs.id
+		WHERE cs.client_id = ?
+	`, client_id)
+
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	var creditSalesArr []models.CreditSale
+	for rows.Next() {
+		var creditSale models.CreditSale
+		if err := rows.Scan(&creditSale.SaleId, &creditSale.Total, &creditSale.TotalPaid, &creditSale.Date, &creditSale.Items); err != nil {
+			return nil, err
+		}
+		creditSalesArr = append(creditSalesArr, creditSale)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return creditSalesArr, nil
+}
+
+func (s *MovementService) GetCreditPayments(sale_id int) ([]models.Payments, error) {
+	var tmpID int64
+	err := s.DB.QueryRow(`
+		SELECT id FROM credit_sales WHERE id = ?
+	`, sale_id).Scan(&tmpID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	var paymentsArr []models.Payments
+
+	rows, err := s.DB.Query(`
+		SELECT id, date, amount FROM credit_payments WHERE credit_sale_id = ?
+	`, sale_id)
+
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var payment models.Payments
+		if err := rows.Scan(&payment.ID, &payment.Date, &payment.Amount); err != nil {
+			return nil, err
+		}
+		paymentsArr = append(paymentsArr, payment)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return paymentsArr, nil
+}
+
+//AGREGAR ESTAS ULTIMAS 2 A HANDLER

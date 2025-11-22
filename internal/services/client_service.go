@@ -102,3 +102,24 @@ func (s *ClientService) DeleteClient(id int) error {
 
 	return nil
 }
+
+// clientes que deben
+func (s *ClientService) GetIndebtedClient() ([]models.Client, error) {
+	rows, err := s.DB.Query(`
+        SELECT id, nombre, telefono, deuda 
+        FROM clientes WHERE deuda > 0
+    `)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	list := []models.Client{}
+	for rows.Next() {
+		var c models.Client
+		rows.Scan(&c.ID, &c.Name, &c.Phone, &c.Debt)
+		list = append(list, c)
+	}
+
+	return list, nil
+}
