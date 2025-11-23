@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
+
+	"github.com/gorilla/mux"
 
 	"github.com/mgdavidd/server-Eme-Mar/internal/models"
 	"github.com/mgdavidd/server-Eme-Mar/internal/services"
@@ -164,4 +167,46 @@ func (h *MoveHandler) PayCredit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	utils.RespondJSON(w, 200, map[string]string{"message": "abono procesado correctamente"})
+}
+
+func (h *MoveHandler) GetClientCreditSales(w http.ResponseWriter, r *http.Request) {
+	idStr := mux.Vars(r)["id"]
+	id, err := strconv.Atoi(idStr)
+	if err != nil || id <= 0 {
+		utils.RespondError(w, 400, "id inválido")
+		return
+	}
+
+	list, err := h.Service.GetCreditSalesClients(id)
+	if errors.Is(err, services.ErrNotFound) {
+		utils.RespondError(w, 404, "cliente no encontrado")
+		return
+	}
+	if err != nil {
+		utils.RespondError(w, 500, "error obteniendo ventas a crédito")
+		return
+	}
+
+	utils.RespondJSON(w, 200, list)
+}
+
+func (h *MoveHandler) GetCreditPayments(w http.ResponseWriter, r *http.Request) {
+	idStr := mux.Vars(r)["sale_id"]
+	id, err := strconv.Atoi(idStr)
+	if err != nil || id <= 0 {
+		utils.RespondError(w, 400, "id inválido")
+		return
+	}
+
+	list, err := h.Service.GetCreditPayments(id)
+	if errors.Is(err, services.ErrNotFound) {
+		utils.RespondError(w, 404, "venta a crédito no encontrada")
+		return
+	}
+	if err != nil {
+		utils.RespondError(w, 500, "error obteniendo pagos")
+		return
+	}
+
+	utils.RespondJSON(w, 200, list)
 }

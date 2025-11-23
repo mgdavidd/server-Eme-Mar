@@ -372,12 +372,19 @@ func (s *MovementService) PayCredit(creditSaleID int64, amount float64) (err err
 		return ErrInvalidInput
 	}
 
+	_, err = tx.Exec(`INSERT INTO credit_payments (credit_sale_id, amount, date) VALUES (?, ?, ?)`,
+		creditSaleID, amount, time.Now().Format("2006-01-02 15:04"))
+	if err != nil {
+		return err
+	}
+
 	_, err = tx.Exec(`INSERT INTO movimientos (descripcion, tipo, monto, fecha) VALUES (?, 'ingreso', ?, ?)`,
 		"Abono a crédito", amount, time.Now().Format("2006-01-02 15:04"))
 	if err != nil {
 		return err
 	}
 
+	// Actualizar caja
 	_, err = tx.Exec(`UPDATE caja SET saldo = saldo + ? WHERE id = 1`, amount)
 	if err != nil {
 		return err
@@ -422,28 +429,64 @@ func (s *MovementService) GetCreditSalesClients(client_id int) ([]models.CreditS
 
 	rows, err := tx.Query(`
 		SELECT cs.id, cs.total, cs.remaining_balance, cs.date, csi.product_id, csi.quantity
-		FROM credit_sales cs 
+		FROM credit_sales cs
 		JOIN credit_sale_items csi ON csi.credit_sale_id = cs.id
 		WHERE cs.client_id = ?
+		ORDER BY cs.id
 	`, client_id)
-
 	if err != nil {
 		return nil, err
 	}
-
 	defer rows.Close()
 
+	// Map sale id -> index in slice
+	salesMap := make(map[int64]int)
 	var creditSalesArr []models.CreditSale
+
 	for rows.Next() {
-		var creditSale models.CreditSale
-		if err := rows.Scan(&creditSale.SaleId, &creditSale.Total, &creditSale.TotalPaid, &creditSale.Date, &creditSale.Items); err != nil {
+		var saleID int64
+		var total float64
+		var remaining float64
+		var dateStr string
+		var productID int64
+		var qty float64
+
+		if err := rows.Scan(&saleID, &total, &remaining, &dateStr, &productID, &qty); err != nil {
 			return nil, err
 		}
-		creditSalesArr = append(creditSalesArr, creditSale)
+		// al inicion idx =
+		idx, exists := salesMap[saleID]
+		if !exists {
+			cs := models.CreditSale{
+				SaleId:    saleID,
+				Items:     []models.SaleItem{},
+				Total:     total,
+				Date:      dateStr,
+				TotalPaid: total - remaining,
+			}
+			creditSalesArr = append(creditSalesArr, cs)
+			idx = len(creditSalesArr) - 1
+			salesMap[saleID] = idx
+		}
+
+		// Append item (SaleItem.Quantity is int64 in other code paths)
+		creditSalesArr[idx].Items = append(creditSalesArr[idx].Items, models.SaleItem{
+			ProductID: productID,
+			Quantity:  int64(qty),
+		})
 	}
 
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+
+	// Build description for each credit sale using product names
+	for i := range creditSalesArr {
+		desc, err := buildSaleDescription(creditSalesArr[i].Items, tx)
+		if err != nil {
+			return nil, err
+		}
+		creditSalesArr[i].Description = desc
 	}
 
 	return creditSalesArr, nil

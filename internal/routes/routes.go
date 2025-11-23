@@ -48,5 +48,7 @@ func RegisterRoutes(
 	movesRoutes.HandleFunc("/pay/credit", movesHandler.PayCredit).Methods("POST")
 	movesRoutes.HandleFunc("", movesHandler.GetAllMoves).Methods("GET")
 	movesRoutes.HandleFunc("/account", movesHandler.GetAccount).Methods("GET")
+	movesRoutes.HandleFunc("/client/{id}", movesHandler.GetClientCreditSales).Methods("GET")
+	movesRoutes.HandleFunc("/credit/payments/{sale_id}", movesHandler.GetCreditPayments).Methods("GET")
 
 }

@@ -17,7 +17,7 @@ func NewClientService(db *sql.DB) *ClientService {
 func (s *ClientService) GetAll() ([]models.Client, error) {
 	rows, err := s.DB.Query(`
         SELECT id, nombre, telefono, deuda 
-        FROM clientes
+        FROM clientes ORDER BY nombre ASC
     `)
 	if err != nil {
 		return nil, err
