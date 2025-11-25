@@ -137,7 +137,7 @@ func (s *MovementService) Supply(supply models.Supply) (err error) {
 	supply.TotalAmount = unitPrice * supply.Amount
 
 	description := "Surtido de insumo: " +
-		strings.ToUpper(nameInsumo) +
+		strings.ToTitle(nameInsumo) +
 		" X " +
 		strconv.FormatFloat(supply.Amount, 'f', -1, 64)
 
@@ -182,11 +182,11 @@ func (s *MovementService) Sell(sale models.Sale) (err error) {
 		}
 	}()
 
-	// Validar cliente
-	var tmpID int
+	// Validar cliente y obtener nombre
+	var clientName string
 	err = tx.QueryRow(`
-		SELECT id FROM clientes WHERE id = ?
-	`, sale.ClientId).Scan(&tmpID)
+        SELECT nombre FROM clientes WHERE id = ?
+    `, sale.ClientId).Scan(&clientName)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrNotFound
 	}
@@ -294,6 +294,8 @@ func (s *MovementService) Sell(sale models.Sale) (err error) {
 	if err != nil {
 		return err
 	}
+
+	description = strings.ToTitle(clientName) + ":\n" + description
 
 	_, err = tx.Exec(`
 		INSERT INTO movimientos (descripcion, tipo, monto, fecha)
