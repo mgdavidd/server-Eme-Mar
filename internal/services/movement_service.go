@@ -40,6 +40,30 @@ func (s *MovementService) GetAll() ([]models.Move, error) {
 	return moves, nil
 }
 
+func (s *MovementService) GetRecent() ([]models.Move, error) {
+	rows, err := s.DB.Query(`
+		SELECT id, descripcion, tipo, monto, fecha
+		FROM movimientos
+		ORDER BY fecha DESC
+		LIMIT 5
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	moves := []models.Move{}
+	for rows.Next() {
+		var i models.Move
+		if err := rows.Scan(&i.ID, &i.Description, &i.Type, &i.Amount, &i.Date); err != nil {
+			return nil, err
+		}
+		moves = append(moves, i)
+	}
+
+	return moves, nil
+}
+
 func (s *MovementService) GetBalance() (models.Account, error) {
 	var b models.Account
 	err := s.DB.QueryRow(`
@@ -528,4 +552,57 @@ func (s *MovementService) GetCreditPayments(sale_id int) ([]models.Payments, err
 	return paymentsArr, nil
 }
 
-//AGREGAR ESTAS ULTIMAS 2 A HANDLER
+func (s *MovementService) AdjustBalance(req models.BalanceAdjustment) (err error) {
+	if req.Amount < 0 {
+		return ErrInvalidInput
+	}
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if p := recover(); p != nil {
+			_ = tx.Rollback()
+			panic(p)
+		} else if err != nil {
+			_ = tx.Rollback()
+		}
+		if cerr := tx.Commit(); cerr != nil {
+			err = cerr
+		}
+	}()
+
+	var currentBalance float64
+	err = tx.QueryRow(`
+		SELECT saldo FROM caja WHERE id = 1
+	`).Scan(&currentBalance)
+	if err != nil {
+		return err
+	}
+	diff := req.Amount - currentBalance
+	var movementType string
+	if diff > 0 {
+		movementType = "ingreso"
+	}
+	if diff < 0 {
+		movementType = "egreso"
+		diff = -diff
+	}
+	_, err = tx.Exec(`
+		INSERT INTO movimientos (descripcion, tipo, monto, fecha)
+		VALUES (?, ?, ?, ?)
+	`, req.Description, movementType, diff, time.Now().Format("2006-01-02 15:04"))
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(`
+		UPDATE caja
+		SET saldo = ?
+		WHERE id = 1
+	`, req.Amount)
+	if err != nil {
+		return err
+	}
+	return nil
+}

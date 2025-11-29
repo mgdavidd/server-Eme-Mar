@@ -32,6 +32,16 @@ func (h *MoveHandler) GetAllMoves(w http.ResponseWriter, r *http.Request) {
 	utils.RespondJSON(w, 200, data)
 }
 
+func (h *MoveHandler) GetRecentMoves(w http.ResponseWriter, r *http.Request) {
+	data, err := h.Service.GetRecent()
+	if err != nil {
+		utils.RespondError(w, 500, "error obteniendo movimientos recientes")
+		return
+	}
+
+	utils.RespondJSON(w, 200, data)
+}
+
 func (h *MoveHandler) GetAccount(w http.ResponseWriter, r *http.Request) {
 	data, err := h.Service.GetBalance()
 	if err != nil {
@@ -209,4 +219,36 @@ func (h *MoveHandler) GetCreditPayments(w http.ResponseWriter, r *http.Request) 
 	}
 
 	utils.RespondJSON(w, 200, list)
+}
+
+func (h *MoveHandler) AdjustBalance(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	var req models.BalanceAdjustment
+
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		if strings.Contains(err.Error(), "unknown field") {
+			utils.RespondError(w, 400, "campo desconocido en el cuerpo de la solicitud")
+			return
+		}
+		utils.RespondError(w, 400, "error al parsear el cuerpo de la solicitud")
+		return
+	}
+
+	if req.Amount < 0 {
+		utils.RespondError(w, 400, "amount no puede ser menor a 0")
+		return
+	}
+	err := h.Service.AdjustBalance(req)
+	if err != nil {
+		if errors.Is(err, services.ErrInvalidInput) {
+			utils.RespondError(w, 400, "entrada inválida")
+			return
+		}
+		utils.RespondError(w, 500, "error interno del servidor")
+		return
+	}
+
+	utils.RespondJSON(w, 200, map[string]string{"message": "saldo ajustado correctamente"})
 }

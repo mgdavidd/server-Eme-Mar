@@ -70,7 +70,7 @@ func (s *ClientService) Create(c *models.Client) error {
 	return nil
 }
 
-func (s *ClientService) UpdateClient(c *models.Client) error {
+func (s *ClientService) UpdateClient(c *models.Client) (*models.Client, error) {
 	res, err := s.DB.Exec(`
         UPDATE clientes
         SET nombre = ?, telefono = ?, deuda = ?
@@ -78,15 +78,26 @@ func (s *ClientService) UpdateClient(c *models.Client) error {
     `, c.Name, c.Phone, c.Debt, c.ID)
 
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	rows, _ := res.RowsAffected()
 	if rows == 0 {
-		return ErrNotFound
+		return nil, ErrNotFound
 	}
 
-	return nil
+	var updated models.Client
+	err = s.DB.QueryRow(`
+		SELECT id, nombre, telefono, deuda
+		FROM clientes
+		WHERE id = ?
+	`, c.ID).Scan(&updated.ID, &updated.Name, &updated.Phone, &updated.Debt)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &updated, nil
 }
 
 func (s *ClientService) DeleteClient(id int) error {

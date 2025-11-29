@@ -80,10 +80,13 @@ func (h *ClientHandler) UpdateClient(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var c models.Client
-	json.NewDecoder(r.Body).Decode(&c)
+	if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
+		utils.RespondError(w, 400, "json inválido")
+		return
+	}
 	c.ID = int64(id)
 
-	err = h.Service.UpdateClient(&c)
+	updated, err := h.Service.UpdateClient(&c)
 	if errors.Is(err, services.ErrNotFound) {
 		utils.RespondError(w, 404, "cliente no encontrado")
 		return
@@ -93,7 +96,7 @@ func (h *ClientHandler) UpdateClient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	utils.RespondJSON(w, 200, map[string]string{"message": "cliente actualizado"})
+	utils.RespondJSON(w, 200, updated)
 }
 
 func (h *ClientHandler) DeleteClient(w http.ResponseWriter, r *http.Request) {

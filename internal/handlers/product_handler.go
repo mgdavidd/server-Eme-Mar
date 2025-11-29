@@ -109,6 +109,7 @@ func (h *ProductHandler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		utils.RespondError(w, 500, "error actualizando producto")
 		return
 	}
+	utils.RespondJSON(w, 200, p)
 }
 
 func (h *ProductHandler) DeleteProduct(w http.ResponseWriter, r *http.Request) {

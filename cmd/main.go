@@ -32,12 +32,20 @@ func main() {
 	insumoHandler := handlers.NewInsumoHandler(insumoService)
 	moveHandler := handlers.NewMoveHandler(moveService)
 	productHandler := handlers.NewProductHandler(productService)
+
 	// Router
 	r := mux.NewRouter()
 	routes.RegisterRoutes(r, clientHandler, insumoHandler, moveHandler, productHandler)
 
 	// CORS
-	handler := cors.Default().Handler(r)
+	c := cors.New(cors.Options{
+		AllowedOrigins:   []string{"http://localhost:5173"},
+		AllowCredentials: true,
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"*"},
+	})
+
+	handler := c.Handler(r)
 
 	// Start server
 	log.Println("Server running on http://localhost:3000")
