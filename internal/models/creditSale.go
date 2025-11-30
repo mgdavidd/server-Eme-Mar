@@ -7,6 +7,7 @@ type CreditSale struct {
 	Description string     `json:"description"`
 	TotalPaid   float64    `json:"total_paid"` //lo que lleva el cliente pagado
 	Date        string     `json:"date"`       // cuando se hizo la venta
+	ClientName  string     `json:"client_name"`
 }
 
 type Payments struct {

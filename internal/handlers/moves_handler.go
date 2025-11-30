@@ -134,6 +134,16 @@ func (h *MoveHandler) Sell(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *MoveHandler) AllCreditSales(w http.ResponseWriter, r *http.Request) {
+	list, err := h.Service.GetAllCreditSales()
+	if err != nil {
+		utils.RespondJSON(w, 200, make([]models.CreditSale, 0))
+		return
+	}
+
+	utils.RespondJSON(w, 200, list)
+}
+
 func (h *MoveHandler) PayCredit(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 

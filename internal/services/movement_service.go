@@ -77,12 +77,17 @@ func (s *MovementService) GetBalance() (models.Account, error) {
 	return b, nil
 }
 
-func buildSaleDescription(items []models.SaleItem, tx *sql.Tx) (string, error) {
+type Queryer interface {
+	QueryRow(query string, args ...any) *sql.Row
+}
+
+func buildSaleDescription(items []models.SaleItem, db Queryer) (string, error) {
+
 	var sb strings.Builder
 
 	for _, item := range items {
 		var name string
-		err := tx.QueryRow(`
+		err := db.QueryRow(`
 			SELECT nombre 
 			FROM productos 
 			WHERE id = ?
@@ -419,8 +424,80 @@ func (s *MovementService) PayCredit(creditSaleID int64, amount float64) (err err
 	return nil
 }
 
-//GET utiles para front
-// obtain credit sales from customers
+func (s *MovementService) GetAllCreditSales() ([]models.CreditSale, error) {
+
+	sales := []models.CreditSale{}
+
+	rows, err := s.DB.Query(`
+		SELECT 
+			cs.id,
+			cs.total,
+			cs.remaining_balance,
+			cs.date,
+			c.nombre
+		FROM credit_sales cs
+		JOIN clientes c ON c.id = cs.client_id
+		ORDER BY cs.id
+	`)
+	if err != nil {
+		return sales, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cs models.CreditSale
+		var remain float64
+
+		err := rows.Scan(
+			&cs.SaleId,
+			&cs.Total,
+			&remain,
+			&cs.Date,
+			&cs.ClientName,
+		)
+		if err != nil {
+			return sales, err
+		}
+
+		cs.TotalPaid = cs.Total - remain
+		cs.Items = []models.SaleItem{}
+		sales = append(sales, cs)
+	}
+
+	if err := rows.Err(); err != nil {
+		return sales, err
+	}
+
+	for i := range sales {
+		itemsRows, err := s.DB.Query(`
+			SELECT product_id, quantity 
+			FROM credit_sale_items
+			WHERE credit_sale_id = ?
+		`, sales[i].SaleId)
+		if err != nil {
+			return sales, err
+		}
+
+		for itemsRows.Next() {
+			var item models.SaleItem
+			err := itemsRows.Scan(&item.ProductID, &item.Quantity)
+			if err != nil {
+				itemsRows.Close()
+				return sales, err
+			}
+			sales[i].Items = append(sales[i].Items, item)
+		}
+		itemsRows.Close()
+
+		desc, err := buildSaleDescription(sales[i].Items, s.DB)
+		if err != nil {
+			return sales, err
+		}
+		sales[i].Description = desc
+	}
+
+	return sales, nil
+}
 
 func (s *MovementService) GetCreditSalesClients(client_id int) ([]models.CreditSale, error) {
 
