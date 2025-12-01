@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -30,6 +31,25 @@ func (h *MoveHandler) GetAllMoves(w http.ResponseWriter, r *http.Request) {
 	}
 
 	utils.RespondJSON(w, 200, data)
+}
+
+func (h *MoveHandler) GetMovesByClient(w http.ResponseWriter, r *http.Request) {
+	clientStr := mux.Vars(r)["id"]
+	clientID, err := strconv.Atoi(clientStr)
+	if err != nil || clientID <= 0 {
+		utils.RespondError(w, 400, "id inválido")
+		return
+	}
+
+	list, err := h.Service.GetMovesByClient(clientID)
+	if err != nil {
+		// Loggear el error pero devolver array vacío para no romper el frontend
+		log.Printf("Error obteniendo movimientos del cliente %d: %v", clientID, err)
+		utils.RespondJSON(w, 200, []models.Move{})
+		return
+	}
+
+	utils.RespondJSON(w, 200, list)
 }
 
 func (h *MoveHandler) GetRecentMoves(w http.ResponseWriter, r *http.Request) {
@@ -123,6 +143,10 @@ func (h *MoveHandler) Sell(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, services.ErrNotFound) {
 			utils.RespondError(w, 404, "cliente o producto no encontrado")
+			return
+		}
+		if errors.Is(err, services.ErrInvalidInput) {
+			utils.RespondError(w, 400, "insumo desconocido o stock insuficiente")
 			return
 		}
 		utils.RespondError(w, 500, "error procesando venta")

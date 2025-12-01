@@ -31,7 +31,8 @@ func RunMigrations(db *sql.DB) {
 			descripcion TEXT NOT NULL,
 			tipo TEXT NOT NULL,
 			monto REAL NOT NULL,
-			fecha TEXT NOT NULL
+			fecha TEXT NOT NULL,
+			cliente_id INTEGER NULL
 		);`,
 
 		// PRODUCTOS

@@ -6,4 +6,5 @@ type Move struct {
 	Type        string  `json:"type"`
 	Description string  `json:"descripcion"` //precio total por el surtido
 	Date        string  `json:"date"`
+	ClientID    *int64  `json:"client_id,omitempty"`
 }

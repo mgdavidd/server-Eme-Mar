@@ -21,7 +21,7 @@ func NewMoveService(db *sql.DB) *MovementService {
 func (s *MovementService) GetAll() ([]models.Move, error) {
 	rows, err := s.DB.Query(`
         SELECT id, descripcion, tipo, monto, fecha 
-        FROM movimientos
+        FROM movimientos ORDER BY fecha DESC
     `)
 	if err != nil {
 		return nil, err
@@ -35,6 +35,49 @@ func (s *MovementService) GetAll() ([]models.Move, error) {
 			return nil, err
 		}
 		moves = append(moves, i)
+	}
+
+	return moves, nil
+}
+
+func (s *MovementService) GetMovesByClient(clientID int) ([]models.Move, error) {
+	rows, err := s.DB.Query(`
+        SELECT id, descripcion, tipo, monto, fecha, cliente_id
+        FROM movimientos
+        WHERE cliente_id = ?
+        ORDER BY fecha DESC
+    `, clientID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	moves := []models.Move{}
+
+	for rows.Next() {
+		var m models.Move
+		var clientIDNullable sql.NullInt64
+
+		err := rows.Scan(
+			&m.ID,
+			&m.Description,
+			&m.Type,
+			&m.Amount,
+			&m.Date,
+			&clientIDNullable,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if clientIDNullable.Valid {
+			clientIDValue := clientIDNullable.Int64
+			m.ClientID = &clientIDValue
+		} else {
+			m.ClientID = nil
+		}
+
+		moves = append(moves, m)
 	}
 
 	return moves, nil
@@ -327,9 +370,10 @@ func (s *MovementService) Sell(sale models.Sale) (err error) {
 	description = strings.ToTitle(clientName) + ":\n" + description
 
 	_, err = tx.Exec(`
-		INSERT INTO movimientos (descripcion, tipo, monto, fecha)
-		VALUES (?, 'ingreso', ?, ?)
-	`, description, sale.Total, sale.Date)
+    INSERT INTO movimientos (descripcion, tipo, monto, fecha, cliente_id)
+    VALUES (?, 'ingreso', ?, ?, ?)
+	`, description, sale.Total, sale.Date, sale.ClientId)
+
 	if err != nil {
 		return err
 	}
@@ -409,8 +453,11 @@ func (s *MovementService) PayCredit(creditSaleID int64, amount float64) (err err
 		return err
 	}
 
-	_, err = tx.Exec(`INSERT INTO movimientos (descripcion, tipo, monto, fecha) VALUES (?, 'ingreso', ?, ?)`,
-		"Abono a crédito", amount, time.Now().Format("2006-01-02 15:04"))
+	_, err = tx.Exec(`
+    INSERT INTO movimientos (descripcion, tipo, monto, fecha, cliente_id)
+    VALUES (?, 'ingreso', ?, ?, ?)
+	`, "Abono a crédito", amount, time.Now().Format("2006-01-02 15:04"), clientID)
+
 	if err != nil {
 		return err
 	}
