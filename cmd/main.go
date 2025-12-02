@@ -39,17 +39,11 @@ func main() {
 
 	// CORS
 	c := cors.New(cors.Options{
-    AllowedOrigins: []string{
-        "http://localhost:5173",
-        "https://eme-mar.onrender.com",
-        "capacitor://localhost",
-        "http://localhost",
-    },
-    AllowCredentials: true,
-    AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-    AllowedHeaders:   []string{"*"},
-})
-
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"*"},
+		AllowCredentials: false, // IMPORTANTE: con "*" no puedes usar credenciales
+	})
 
 	handler := c.Handler(r)
 
