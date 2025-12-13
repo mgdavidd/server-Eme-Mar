@@ -21,7 +21,9 @@ func NewMoveService(db *sql.DB) *MovementService {
 func (s *MovementService) GetAll() ([]models.Move, error) {
 	rows, err := s.DB.Query(`
         SELECT id, descripcion, tipo, monto, fecha 
-        FROM movimientos ORDER BY fecha DESC
+        FROM movimientos
+		WHERE date(fecha) >= date('now', '-30 days')
+        ORDER BY fecha DESC
     `)
 	if err != nil {
 		return nil, err
@@ -45,6 +47,7 @@ func (s *MovementService) GetMovesByClient(clientID int) ([]models.Move, error) 
         SELECT id, descripcion, tipo, monto, fecha, cliente_id
         FROM movimientos
         WHERE cliente_id = ?
+		  AND date(fecha) >= date('now', '-30 days')
         ORDER BY fecha DESC
     `, clientID)
 	if err != nil {
@@ -254,7 +257,6 @@ func (s *MovementService) Sell(sale models.Sale) (err error) {
 		}
 	}()
 
-	// Validar cliente y obtener nombre
 	var clientName string
 	err = tx.QueryRow(`
         SELECT nombre FROM clientes WHERE id = ?
@@ -266,7 +268,6 @@ func (s *MovementService) Sell(sale models.Sale) (err error) {
 		return err
 	}
 
-	// Calcular total
 	sale.Total = 0
 	for _, item := range sale.Items {
 		var price float64
@@ -282,7 +283,6 @@ func (s *MovementService) Sell(sale models.Sale) (err error) {
 		sale.Total += price * float64(item.Quantity)
 	}
 
-	// DEDUCIR INSUMOS: por cada producto -> obtener sus insumos y restar (cantidad_por_producto * cantidad_vendida)
 	for _, item := range sale.Items {
 		rows, err := tx.Query(`
             SELECT insumo_id, cantidad_insumo
@@ -303,7 +303,6 @@ func (s *MovementService) Sell(sale models.Sale) (err error) {
 
 			totalNeeded := qtyPerProduct * float64(item.Quantity)
 
-			// Intentar actualización atómica para evitar quedar con stock negativo
 			res, err := tx.Exec(`
                 UPDATE insumos
                 SET stock_actual = stock_actual - ?
@@ -316,7 +315,6 @@ func (s *MovementService) Sell(sale models.Sale) (err error) {
 			ra, _ := res.RowsAffected()
 			if ra == 0 {
 				rows.Close()
-				// insuficiente stock o insumo inexistente
 				return ErrInvalidInput
 			}
 		}
@@ -328,7 +326,6 @@ func (s *MovementService) Sell(sale models.Sale) (err error) {
 		rows.Close()
 	}
 
-	// Venta a crédito
 	if sale.IsCredit {
 		res, err := tx.Exec(`
 			INSERT INTO credit_sales (client_id, total, remaining_balance, date)
@@ -361,7 +358,6 @@ func (s *MovementService) Sell(sale models.Sale) (err error) {
 		return nil
 	}
 
-	// Venta normal (contado)
 	description, err := buildSaleDescription(sale.Items, tx)
 	if err != nil {
 		return err
@@ -427,7 +423,6 @@ func (s *MovementService) PayCredit(creditSaleID int64, amount float64) (err err
 		return ErrInvalidInput
 	}
 
-	// Atomic update para evitar condiciones de carrera
 	res, err := tx.Exec(`UPDATE credit_sales SET remaining_balance = remaining_balance - ? WHERE id = ? AND remaining_balance >= ?`, amount, creditSaleID, amount)
 	if err != nil {
 		return err
@@ -437,7 +432,6 @@ func (s *MovementService) PayCredit(creditSaleID int64, amount float64) (err err
 		return ErrInvalidInput
 	}
 
-	// Actualizar deuda del cliente de forma segura
 	res, err = tx.Exec(`UPDATE clientes SET deuda = deuda - ? WHERE id = ? AND deuda >= ?`, amount, clientID, amount)
 	if err != nil {
 		return err
@@ -462,7 +456,6 @@ func (s *MovementService) PayCredit(creditSaleID int64, amount float64) (err err
 		return err
 	}
 
-	// Actualizar caja
 	_, err = tx.Exec(`UPDATE caja SET saldo = saldo + ? WHERE id = 1`, amount)
 	if err != nil {
 		return err
@@ -484,6 +477,12 @@ func (s *MovementService) GetAllCreditSales() ([]models.CreditSale, error) {
 			c.nombre
 		FROM credit_sales cs
 		JOIN clientes c ON c.id = cs.client_id
+		WHERE
+			cs.remaining_balance > 0
+			OR (
+				cs.remaining_balance = 0
+				AND date(cs.date) >= date('now', '-30 days')
+			)
 		ORDER BY cs.id
 	`)
 	if err != nil {
@@ -582,6 +581,13 @@ func (s *MovementService) GetCreditSalesClients(client_id int) ([]models.CreditS
 		FROM credit_sales cs
 		JOIN credit_sale_items csi ON csi.credit_sale_id = cs.id
 		WHERE cs.client_id = ?
+		  AND (
+			  cs.remaining_balance > 0
+			  OR (
+				  cs.remaining_balance = 0
+				  AND date(cs.date) >= date('now', '-30 days')
+			  )
+		  )
 		ORDER BY cs.id
 	`, client_id)
 	if err != nil {
@@ -589,7 +595,6 @@ func (s *MovementService) GetCreditSalesClients(client_id int) ([]models.CreditS
 	}
 	defer rows.Close()
 
-	// Map sale id -> index in slice
 	salesMap := make(map[int64]int)
 	var creditSalesArr []models.CreditSale
 
@@ -604,7 +609,6 @@ func (s *MovementService) GetCreditSalesClients(client_id int) ([]models.CreditS
 		if err := rows.Scan(&saleID, &total, &remaining, &dateStr, &productID, &qty); err != nil {
 			return nil, err
 		}
-		// al inicion idx =
 		idx, exists := salesMap[saleID]
 		if !exists {
 			cs := models.CreditSale{
@@ -619,7 +623,6 @@ func (s *MovementService) GetCreditSalesClients(client_id int) ([]models.CreditS
 			salesMap[saleID] = idx
 		}
 
-		// Append item (SaleItem.Quantity is int64 in other code paths)
 		creditSalesArr[idx].Items = append(creditSalesArr[idx].Items, models.SaleItem{
 			ProductID: productID,
 			Quantity:  int64(qty),
@@ -630,7 +633,6 @@ func (s *MovementService) GetCreditSalesClients(client_id int) ([]models.CreditS
 		return nil, err
 	}
 
-	// Build description for each credit sale using product names
 	for i := range creditSalesArr {
 		desc, err := buildSaleDescription(creditSalesArr[i].Items, tx)
 		if err != nil {
