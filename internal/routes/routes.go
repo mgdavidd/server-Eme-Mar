@@ -54,5 +54,6 @@ func RegisterRoutes(
 	movesRoutes.HandleFunc("/credit/client/{id}", movesHandler.GetClientCreditSales).Methods("GET")
 	movesRoutes.HandleFunc("/credit/payments/{sale_id}", movesHandler.GetCreditPayments).Methods("GET")
 	movesRoutes.HandleFunc("/adjust/balance", movesHandler.AdjustBalance).Methods("POST")
+	movesRoutes.HandleFunc("/sync/debts", movesHandler.SyncClientDebts).Methods("POST")
 
 }

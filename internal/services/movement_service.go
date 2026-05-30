@@ -14,6 +14,31 @@ type MovementService struct {
 	DB *sql.DB
 }
 
+func (s *MovementService) SyncAllClientDebts() error {
+	_, err := s.DB.Exec(`
+        UPDATE clientes
+        SET deuda = (
+            SELECT COALESCE(SUM(remaining_balance), 0)
+            FROM credit_sales
+            WHERE client_id = clientes.id
+        )
+    `)
+	return err
+}
+
+func syncClientDebt(tx *sql.Tx, clientID int64) error {
+	_, err := tx.Exec(`
+        UPDATE clientes
+        SET deuda = (
+            SELECT COALESCE(SUM(remaining_balance), 0)
+            FROM credit_sales
+            WHERE client_id = ?
+        )
+        WHERE id = ?
+    `, clientID, clientID)
+	return err
+}
+
 func NewMoveService(db *sql.DB) *MovementService {
 	return &MovementService{DB: db}
 }
@@ -347,10 +372,7 @@ func (s *MovementService) Sell(sale models.Sale) (err error) {
 			}
 		}
 
-		_, err = tx.Exec(`
-        UPDATE clientes
-        SET deuda = deuda + ?
-        WHERE id = ?`, sale.Total, sale.ClientId)
+		err = syncClientDebt(tx, sale.ClientId)
 		if err != nil {
 			return err
 		}
@@ -432,13 +454,9 @@ func (s *MovementService) PayCredit(creditSaleID int64, amount float64) (err err
 		return ErrInvalidInput
 	}
 
-	res, err = tx.Exec(`UPDATE clientes SET deuda = deuda - ? WHERE id = ? AND deuda >= ?`, amount, clientID, amount)
+	err = syncClientDebt(tx, clientID)
 	if err != nil {
 		return err
-	}
-	ra, _ = res.RowsAffected()
-	if ra == 0 {
-		return ErrInvalidInput
 	}
 
 	_, err = tx.Exec(`INSERT INTO credit_payments (credit_sale_id, amount, date) VALUES (?, ?, ?)`,
@@ -692,9 +710,10 @@ func (s *MovementService) AdjustBalance(req models.BalanceAdjustment) (err error
 			panic(p)
 		} else if err != nil {
 			_ = tx.Rollback()
-		}
-		if cerr := tx.Commit(); cerr != nil {
-			err = cerr
+		} else { // ← solo commit si no hubo error
+			if cerr := tx.Commit(); cerr != nil {
+				err = cerr
+			}
 		}
 	}()
 
@@ -706,11 +725,14 @@ func (s *MovementService) AdjustBalance(req models.BalanceAdjustment) (err error
 		return err
 	}
 	diff := req.Amount - currentBalance
+	if diff == 0 {
+		return nil // Sin cambios, no hacer nada
+	}
+
 	var movementType string
 	if diff > 0 {
 		movementType = "ingreso"
-	}
-	if diff < 0 {
+	} else { // diff < 0 (ya validado arriba)
 		movementType = "egreso"
 		diff = -diff
 	}

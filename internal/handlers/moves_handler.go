@@ -23,6 +23,15 @@ func NewMoveHandler(s *services.MovementService) *MoveHandler {
 	return &MoveHandler{Service: s}
 }
 
+func (h *MoveHandler) SyncClientDebts(w http.ResponseWriter, r *http.Request) {
+	err := h.Service.SyncAllClientDebts()
+	if err != nil {
+		utils.RespondError(w, 500, "error sincronizando deudas")
+		return
+	}
+	utils.RespondJSON(w, 200, map[string]string{"message": "deudas sincronizadas"})
+}
+
 func (h *MoveHandler) GetAllMoves(w http.ResponseWriter, r *http.Request) {
 	data, err := h.Service.GetAll()
 	if err != nil {
